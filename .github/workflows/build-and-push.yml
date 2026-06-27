@@ -1,0 +1,87 @@
+name: Build and Push Docker Image
+
+on:
+  workflow_call:
+    inputs:
+      image_name:
+        description: 'Image name without registry prefix (e.g. template-backend)'
+        required: true
+        type: string
+      kustomization_path:
+        description: 'Path to kustomization.yaml inside platform-gitops'
+        required: true
+        type: string
+      registry:
+        description: 'Container registry'
+        required: false
+        type: string
+        default: 'ghcr.io'
+      org:
+        description: 'GitHub org / registry namespace'
+        required: false
+        type: string
+        default: 'gino-dev-platform'
+      gitops_repo:
+        description: 'GitOps repository slug (org/repo)'
+        required: false
+        type: string
+        default: 'gino-dev-platform/platform-gitops'
+      gitops_username:
+        description: 'Git username used to push to the gitops repo'
+        required: false
+        type: string
+        default: 'ginojc'
+    secrets:
+      GHCR_TOKEN:
+        required: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate image tag
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Login to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ inputs.gitops_username }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Build image
+        run: |
+          docker build \
+            -t ${{ inputs.registry }}/${{ inputs.org }}/${{ inputs.image_name }}:latest \
+            -t ${{ inputs.registry }}/${{ inputs.org }}/${{ inputs.image_name }}:${{ steps.vars.outputs.sha_short }} \
+            .
+
+      - name: Push images
+        run: |
+          docker push ${{ inputs.registry }}/${{ inputs.org }}/${{ inputs.image_name }}:latest
+          docker push ${{ inputs.registry }}/${{ inputs.org }}/${{ inputs.image_name }}:${{ steps.vars.outputs.sha_short }}
+
+      - name: Update GitOps image tag
+        run: |
+          git clone https://${{ inputs.gitops_username }}:${{ secrets.GHCR_TOKEN }}@github.com/${{ inputs.gitops_repo }}.git gitops
+
+          cd gitops
+
+          # Use | as sed delimiter to avoid escaping forward slashes in the image name
+          sed -i "\|name: ${{ inputs.registry }}/${{ inputs.org }}/${{ inputs.image_name }}|{n;s/newTag:.*/newTag: \"${{ steps.vars.outputs.sha_short }}\"/;}" ${{ inputs.kustomization_path }}
+
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add .
+          git commit -m "update ${{ inputs.image_name }} image to ${{ steps.vars.outputs.sha_short }}"
+          git push
