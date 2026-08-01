@@ -70,6 +70,14 @@ jobs:
           docker push ${{ inputs.registry }}/${{ inputs.org }}/${{ inputs.image_name }}:latest
           docker push ${{ inputs.registry }}/${{ inputs.org }}/${{ inputs.image_name }}:${{ steps.vars.outputs.sha_short }}
 
+      - name: Make package public
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          gh api --method PATCH \
+            "/orgs/${{ inputs.org }}/packages/container/${{ inputs.image_name }}" \
+            -f visibility=public
+
       - name: Update GitOps image tag
         run: |
           git clone https://${{ inputs.gitops_username }}:${{ secrets.GHCR_TOKEN }}@github.com/${{ inputs.gitops_repo }}.git gitops
