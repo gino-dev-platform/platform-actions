@@ -92,14 +92,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
-          for i in 1 2 3; do
-            gh api --method PATCH \
-              "/orgs/${{ inputs.org }}/packages/container/${{ inputs.image_name }}" \
-              -f visibility=public && exit 0
-            echo "Attempt $i failed, retrying in 15s..."
-            sleep 15
-          done
-          exit 1
+          echo "--- Checking package location ---"
+          echo "Trying org endpoint:"
+          gh api "/orgs/${{ inputs.org }}/packages/container/${{ inputs.image_name }}" --jq '{name: .name, visibility: .visibility, owner: .owner.login}' && ORG_OK=true || ORG_OK=false
+          echo "Trying user endpoint:"
+          gh api "/user/packages/container/${{ inputs.image_name }}" --jq '{name: .name, visibility: .visibility, owner: .owner.login}' && USER_OK=true || USER_OK=false
+          echo "org_ok=$ORG_OK user_ok=$USER_OK"
+          echo "--- PATCH ---"
+          if [ "$ORG_OK" = "true" ]; then
+            gh api --method PATCH "/orgs/${{ inputs.org }}/packages/container/${{ inputs.image_name }}" -f visibility=public
+          elif [ "$USER_OK" = "true" ]; then
+            gh api --method PATCH "/user/packages/container/${{ inputs.image_name }}" -f visibility=public
+          else
+            echo "Package not found in either org or user namespace"
+            exit 1
+          fi
 
       - name: Update GitOps image tag
         if: steps.preflight.outputs.ready == 'true'
