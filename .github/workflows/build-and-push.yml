@@ -92,21 +92,33 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
-          echo "--- Checking package location ---"
-          echo "Trying org endpoint:"
-          gh api "/orgs/${{ inputs.org }}/packages/container/${{ inputs.image_name }}" --jq '{name: .name, visibility: .visibility, owner: .owner.login}' && ORG_OK=true || ORG_OK=false
-          echo "Trying user endpoint:"
-          gh api "/user/packages/container/${{ inputs.image_name }}" --jq '{name: .name, visibility: .visibility, owner: .owner.login}' && USER_OK=true || USER_OK=false
-          echo "org_ok=$ORG_OK user_ok=$USER_OK"
-          echo "--- PATCH ---"
-          if [ "$ORG_OK" = "true" ]; then
-            gh api --method PATCH "/orgs/${{ inputs.org }}/packages/container/${{ inputs.image_name }}" -f visibility=public
-          elif [ "$USER_OK" = "true" ]; then
-            gh api --method PATCH "/user/packages/container/${{ inputs.image_name }}" -f visibility=public
-          else
-            echo "Package not found in either org or user namespace"
-            exit 1
-          fi
+          echo "--- Getting package node ID ---"
+          PACKAGE_ID=$(gh api graphql \
+            -f query='query($org: String!, $name: String!) {
+              organization(login: $org) {
+                packages(names: [$name], packageType: CONTAINER, first: 1) {
+                  nodes { id visibility }
+                }
+              }
+            }' \
+            -f org="${{ inputs.org }}" \
+            -f name="${{ inputs.image_name }}" \
+            --jq '.data.organization.packages.nodes[0].id // empty')
+          echo "Package ID: $PACKAGE_ID"
+
+          echo "--- Available package mutations ---"
+          gh api graphql \
+            -f query='{ __schema { mutationType { fields { name } } } }' \
+            --jq '[.data.__schema.mutationType.fields[].name | select(test("ackage";"i"))]'
+
+          echo "--- Trying changePackageVisibility ---"
+          gh api graphql \
+            -f query='mutation($packageId: ID!) {
+              changePackageVisibility(input: { packageId: $packageId, visibility: PUBLIC }) {
+                package { visibility }
+              }
+            }' \
+            -f packageId="$PACKAGE_ID"
 
       - name: Update GitOps image tag
         if: steps.preflight.outputs.ready == 'true'

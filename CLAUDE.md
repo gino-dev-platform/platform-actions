@@ -55,6 +55,8 @@ Invocado con `uses: gino-dev-platform/platform-actions/.github/workflows/build-a
 5. Push de ambas imágenes
 6. Clona `platform-gitops`, actualiza `newTag` en el kustomization.yaml indicado y hace push
 
+> Los packages se crean públicos por defecto porque el org `gino-dev-platform` tiene configurado "Default package visibility: Public" en Settings → Packages.
+
 **Cómo se actualiza el tag en kustomization.yaml:**
 
 ```bash
