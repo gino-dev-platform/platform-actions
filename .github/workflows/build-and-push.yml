@@ -87,39 +87,6 @@ jobs:
           docker push ${{ inputs.registry }}/${{ inputs.org }}/${{ inputs.image_name }}:latest
           docker push ${{ inputs.registry }}/${{ inputs.org }}/${{ inputs.image_name }}:${{ steps.vars.outputs.sha_short }}
 
-      - name: Make package public
-        if: steps.preflight.outputs.ready == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
-        run: |
-          echo "--- Getting package node ID ---"
-          PACKAGE_ID=$(gh api graphql \
-            -f query='query($org: String!, $name: String!) {
-              organization(login: $org) {
-                packages(names: [$name], packageType: CONTAINER, first: 1) {
-                  nodes { id visibility }
-                }
-              }
-            }' \
-            -f org="${{ inputs.org }}" \
-            -f name="${{ inputs.image_name }}" \
-            --jq '.data.organization.packages.nodes[0].id // empty')
-          echo "Package ID: $PACKAGE_ID"
-
-          echo "--- Available package mutations ---"
-          gh api graphql \
-            -f query='{ __schema { mutationType { fields { name } } } }' \
-            --jq '[.data.__schema.mutationType.fields[].name | select(test("ackage";"i"))]'
-
-          echo "--- Trying changePackageVisibility ---"
-          gh api graphql \
-            -f query='mutation($packageId: ID!) {
-              changePackageVisibility(input: { packageId: $packageId, visibility: PUBLIC }) {
-                package { visibility }
-              }
-            }' \
-            -f packageId="$PACKAGE_ID"
-
       - name: Update GitOps image tag
         if: steps.preflight.outputs.ready == 'true'
         run: |
