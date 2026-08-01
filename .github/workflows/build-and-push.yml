@@ -92,10 +92,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
+          echo "--- Token debug ---"
+          echo "Token length: ${#GH_TOKEN}"
+          echo "Token prefix: ${GH_TOKEN:0:6}"
+          echo "Authenticated as: $(gh api user --jq '.login')"
+          echo "Token scopes: $(gh api rate_limit -i 2>&1 | grep -i 'x-oauth-scopes')"
+          echo "--- API call ---"
           for i in 1 2 3; do
+            echo "Attempt $i: PATCH /orgs/${{ inputs.org }}/packages/container/${{ inputs.image_name }}"
             gh api --method PATCH \
               "/orgs/${{ inputs.org }}/packages/container/${{ inputs.image_name }}" \
-              -f visibility=public && exit 0
+              -f visibility=public -v && exit 0
             echo "Attempt $i failed, retrying in 15s..."
             sleep 15
           done
