@@ -44,14 +44,29 @@ jobs:
       packages: write
 
     steps:
+      - name: Check GHCR_TOKEN
+        id: preflight
+        env:
+          TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "ready=true" >> $GITHUB_OUTPUT
+          else
+            echo "::notice::GHCR_TOKEN not configured — skipping CI (expected on initial commit of new repos)"
+            echo "ready=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Checkout repository
+        if: steps.preflight.outputs.ready == 'true'
         uses: actions/checkout@v7
 
       - name: Generate image tag
+        if: steps.preflight.outputs.ready == 'true'
         id: vars
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to registry
+        if: steps.preflight.outputs.ready == 'true'
         uses: docker/login-action@v4
         with:
           registry: ${{ inputs.registry }}
@@ -59,6 +74,7 @@ jobs:
           password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Build image
+        if: steps.preflight.outputs.ready == 'true'
         run: |
           docker build \
             -t ${{ inputs.registry }}/${{ inputs.org }}/${{ inputs.image_name }}:latest \
@@ -66,19 +82,27 @@ jobs:
             .
 
       - name: Push images
+        if: steps.preflight.outputs.ready == 'true'
         run: |
           docker push ${{ inputs.registry }}/${{ inputs.org }}/${{ inputs.image_name }}:latest
           docker push ${{ inputs.registry }}/${{ inputs.org }}/${{ inputs.image_name }}:${{ steps.vars.outputs.sha_short }}
 
       - name: Make package public
+        if: steps.preflight.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
-          gh api --method PATCH \
-            "/orgs/${{ inputs.org }}/packages/container/${{ inputs.image_name }}" \
-            -f visibility=public
+          for i in 1 2 3; do
+            gh api --method PATCH \
+              "/orgs/${{ inputs.org }}/packages/container/${{ inputs.image_name }}" \
+              -f visibility=public && exit 0
+            echo "Attempt $i failed, retrying in 15s..."
+            sleep 15
+          done
+          exit 1
 
       - name: Update GitOps image tag
+        if: steps.preflight.outputs.ready == 'true'
         run: |
           git clone https://${{ inputs.gitops_username }}:${{ secrets.GHCR_TOKEN }}@github.com/${{ inputs.gitops_repo }}.git gitops
 
